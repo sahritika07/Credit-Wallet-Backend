@@ -14,9 +14,11 @@ class StripeController {
 
   public webhook = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const payload = req.body;
-      const signature = req.headers['stripe-signature'];
-      const result = await stripeService.handleWebhook(JSON.stringify(payload), Array.isArray(signature) ? signature[0] : signature || '');
+      // req.body will be the raw request body (Buffer) when express.raw is used on the route
+      const raw = req.body as Buffer;
+      const payloadString = raw && raw.length ? raw.toString('utf8') : '';
+      const signature = Array.isArray(req.headers['stripe-signature']) ? req.headers['stripe-signature'][0] : (req.headers['stripe-signature'] as string | undefined) || '';
+      const result = await stripeService.handleWebhook(payloadString, signature);
       res.status(200).json(result);
     } catch (error) {
       next(error);
