@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import authRoutes from './routes/authRoutes';
 
 dotenv.config();
 
@@ -23,6 +24,8 @@ app.use(limiter);
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', message: 'Backend is running' });
 });
+
+app.use('/api/auth', authRoutes);
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
