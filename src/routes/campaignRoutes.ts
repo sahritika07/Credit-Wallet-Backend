@@ -5,6 +5,7 @@ import { requireFields } from '../middleware/validators';
 
 const router = Router();
 
+router.get('/', authenticate, campaignController.list);
 router.post('/', authenticate, requireFields(['title', 'targetAmount', 'currencyId']), campaignController.create);
 router.post('/:id/fund', authenticate, requireFields(['currencyId', 'amount']), campaignController.fund);
 

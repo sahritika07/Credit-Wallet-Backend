@@ -5,6 +5,16 @@ import Wallet from '../models/Wallet';
 import WalletLedger from '../models/WalletLedger';
 
 class CampaignService {
+  public async listCampaigns(userId: number) {
+    const campaigns = await Campaign.findAll({
+      where: { user_id: userId },
+      include: [{ model: Currency, as: 'currency', attributes: ['id', 'name', 'code', 'module', 'price_per_credit_paise'] }],
+      order: [['created_at', 'DESC']],
+    });
+
+    return { success: true, data: campaigns };
+  }
+
   public async createCampaign(userId: number, input: { title: string; description?: string; targetAmount: number; currencyId: number }) {
     const currency = await Currency.findByPk(input.currencyId);
     if (!currency) {

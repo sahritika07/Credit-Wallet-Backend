@@ -2,6 +2,15 @@ import { Request, Response, NextFunction } from 'express';
 import campaignService from '../services/campaignService';
 
 class CampaignController {
+  public list = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const result = await campaignService.listCampaigns(req.user!.id);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
   public create = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const result = await campaignService.createCampaign(req.user!.id, {

@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User';
+import walletService from './walletService';
 
 interface SignupInput {
   full_name: string;
@@ -42,6 +43,14 @@ class AuthService {
     });
 
     const token = this.generateToken({ id: user.id, email: user.email, role: user.role });
+
+    // Create default wallets for all active currencies for the new user
+    try {
+      await walletService.createWalletsForUser(user.id);
+    } catch (err) {
+      // non-fatal: log and continue — wallets can be created later
+      console.error('Failed to create wallets for new user:', err);
+    }
 
     return {
       success: true,
