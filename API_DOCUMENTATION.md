@@ -1,122 +1,176 @@
 # API Documentation
 
 Base URL: `http://localhost:5000`
-All routes are prefixed as shown in the route path examples.
 
----
+## Authentication
 
-**Authentication**
+### `POST /api/auth/signup`
 
-- POST /api/auth/signup
-  - Authentication: No
-  - Request body (application/json):
-    - `full_name` (string, required)
-    - `email` (string, required)
-    - `password` (string, required)
-  - Response 201:
-    - `{ success: true, data: { user: { id, full_name, email, role }, token } }`
-  - Errors: 400 (validation), 409 (email exists)
-  - Business rules: Creates user, hashes password, returns JWT. Also creates wallets later via service.
+- Authentication: not required
+- Body:
+  - `full_name` - string, required
+  - `email` - string, required
+  - `password` - string, required
+- Success: `201`
+- Response:
 
-- POST /api/auth/login
-  - Authentication: No
-  - Request body:
-    - `email` (string, required)
-    - `password` (string, required)
-  - Response 200: same shape as signup
-  - Errors: 400 (validation), 401 (invalid credentials)
-
-- GET /api/auth/profile
-  - Authentication: Bearer token required
-  - Response 200: `{ success: true, data: user }`
-
----
-
-**Wallet**
-
-- GET /api/wallet
-  - Authentication: Bearer token required
-  - Response 200: `{ success: true, data: [ wallets ] }`
-  - Each wallet: `{ id, user_id, currency_id, current_balance, currency: { id, name, code, module, price_per_credit_paise } }`
-
-- GET /api/wallet/ledger?currencyId={currencyId}
-  - Authentication: Bearer token required
-  - Query params: `currencyId` optional
-  - Response 200: `{ success: true, data: [ ledger entries ] }`
-  - Ledger entry: `{ id, wallet_id, currency_id, type, amount, balance_after, reference_type, reference_id, description, createdAt }`
-
-- POST /api/wallet/purchase
-  - Authentication: Bearer token required
-  - Request body:
-    - `currencyId` (integer, required)
-    - `quantity` (integer, required)
-    - `description` (string, optional)
-  - Response 200: `{ success: true, data: { wallet, currency } }`
-  - Business rules: Uses transactions; creates ledger entry; quantity must be > 0.
-
----
-
-**Stripe (Checkout & Webhook)**
-
-- POST /api/stripe/checkout
-  - Authentication: Bearer token required
-  - Request body:
-    - `currencyId` (integer, required)
-    - `quantity` (integer, required)
-  - Response 200: `{ success: true, data: { checkoutUrl, paymentId } }`
-  - Business rules: Creates a `Payment` record with status `pending` and creates a Stripe Checkout session. Do NOT grant credits until webhook verifies payment.
-
-- POST /api/stripe/webhook
-  - Authentication: None (Stripe signs requests)
-  - Body: raw JSON (express.raw used on route)
-  - Headers: `Stripe-Signature` header required
-  - Behavior: verifies signature with `STRIPE_WEBHOOK_SECRET`, stores incoming event in `stripe_events` (idempotency), and for `checkout.session.completed` grants credits inside a DB transaction: updates wallet balance, creates ledger entry, updates payment status to `succeeded`.
-  - Response 200 on success: `{ success: true, message: 'Credits granted' }` or `{ success: true, message: 'Webhook processed' }`
-  - Idempotency: `stripe_events.event_id` is unique — duplicate events are ignored.
-
----
-
-**Campaigns**
-
-- POST /api/campaigns
-  - Authentication: Bearer token required
-  - Request body:
-    - `title` (string, required)
-    - `targetAmount` (integer, required) — amount in credits (not paise)
-    - `currencyId` (integer, required)
-    - `description` (string, optional)
-  - Response 201: `{ success: true, data: campaign }`
-  - Business rules: currency must exist; campaign created in `active` state.
-
-- POST /api/campaigns/:id/fund
-  - Authentication: Bearer token required
-  - Request body:
-    - `currencyId` (integer, required)
-    - `amount` (integer, required) — credits to fund
-  - Response 200: `{ success: true, data: updatedCampaign }`
-  - Business rules:
-    - Only currencies where `module === 'campaign'` allowed
-    - Wallet must have sufficient balance; balance cannot be negative
-    - Campaign can only be funded once; status updated to `funded`
-    - Uses DB transactions for consistency
-
----
-
-**Errors & Validation**
-- Responses follow `{ success: boolean, data?: any, error?: { message, details } }` format
-- Validation failures return 400 with details array
-- Authentication failures return 401
-
----
-
-**Notes & Next Steps**
-- Add OpenAPI / Swagger documentation and serve it via an `api-docs` endpoint
-- Add automated tests: Jest + supertest
-- Harden webhook processing with retry/backoff and a dead-letter mechanism
-
----
-
-Commit message suggestion:
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": 1,
+      "full_name": "Demo User",
+      "email": "demo@example.com",
+      "role": "user"
+    },
+    "token": "jwt-token"
+  }
+}
 ```
-docs: add API documentation file
+
+- Business rules:
+  - email must be unique
+  - password is hashed before storage
+  - wallets are pre-created for all active currencies
+
+### `POST /api/auth/login`
+
+- Authentication: not required
+- Body:
+  - `email` - string, required
+  - `password` - string, required
+- Success: `200`
+- Business rules:
+  - validates credentials
+  - updates `last_login_at`
+  - returns JWT token
+
+### `GET /api/auth/profile`
+
+- Authentication: bearer token required
+- Success: `200`
+
+## Wallet
+
+### `GET /api/wallet`
+
+- Authentication: bearer token required
+- Success: `200`
+- Returns all wallets for the authenticated user with currency details
+
+### `GET /api/wallet/ledger`
+
+- Authentication: bearer token required
+- Query params:
+  - `currencyId` - integer, optional
+- Success: `200`
+- Returns ledger entries for the user's wallets
+
+### `POST /api/wallet/purchase`
+
+- Authentication: bearer token required
+- Body:
+  - `currencyId` - integer, required
+  - `quantity` - integer, required
+  - `description` - string, optional
+- Success: `200`
+- Business rules:
+  - quantity must be greater than zero
+  - creates wallet if missing
+  - updates balance and ledger in one transaction
+
+## Stripe
+
+### `POST /api/stripe/checkout`
+
+- Authentication: bearer token required
+- Body:
+  - `currencyId` - integer, required
+  - `quantity` - integer, required
+- Success: `200`
+- Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "checkoutUrl": "https://checkout.stripe.com/...",
+    "paymentId": 12
+  }
+}
 ```
+
+- Business rules:
+  - quantity must be greater than zero
+  - currency must exist
+  - total amount is `price_per_credit_paise * quantity`
+  - Stripe Checkout is created in `INR`
+  - total amount must be at least `STRIPE_MINIMUM_AMOUNT_PAISE`
+  - creates a local pending `payments` row
+  - does not grant credits yet
+
+### `POST /api/stripe/webhook`
+
+- Authentication: not required
+- Body: raw JSON
+- Header: `Stripe-Signature` required
+- Success: `200`
+- Business rules:
+  - verifies Stripe signature using `STRIPE_WEBHOOK_SECRET`
+  - stores events in `stripe_events` for idempotency
+  - on `checkout.session.completed`, grants credits in one transaction
+  - updates wallet balance
+  - writes wallet ledger
+  - marks payment as `succeeded`
+
+## Campaigns
+
+### `POST /api/campaigns`
+
+- Authentication: bearer token required
+- Body:
+  - `title` - string, required
+  - `targetAmount` - integer, required
+  - `currencyId` - integer, required
+  - `description` - string, optional
+- Success: `201`
+- Business rules:
+  - currency must exist
+  - target amount must be greater than zero
+  - campaign starts as `active`
+
+### `POST /api/campaigns/:id/fund`
+
+- Authentication: bearer token required
+- Body:
+  - `currencyId` - integer, required
+  - `amount` - integer, required
+- Success: `200`
+- Business rules:
+  - only campaign-module currencies can fund campaigns
+  - amount must be greater than zero
+  - wallet must have enough balance
+  - writes ledger and campaign update in one transaction
+
+## Error Format
+
+All failures follow this shape:
+
+```json
+{
+  "success": false,
+  "error": {
+    "message": "Human readable message",
+    "details": null
+  }
+}
+```
+
+Common statuses:
+
+- `400` - validation or business rule error
+- `401` - authentication failure
+- `404` - missing resource
+- `409` - conflict such as duplicate email
+- `500` - unexpected server error
